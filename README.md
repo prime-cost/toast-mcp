@@ -1,4 +1,4 @@
-# Toast MCP — talk to your restaurant's POS
+# Toast POS MCP server
 
 Connect Claude (or any MCP client) to your Toast POS. Ask your restaurant questions in plain English — from your laptop, your phone, anywhere:
 
@@ -10,16 +10,9 @@ Connect Claude (or any MCP client) to your Toast POS. Ask your restaurant questi
 
 A **PrimeCost** project — built and maintained by **Chris Cusack**, restaurant owner and writer of [All Day](https://chriscusack.net), a newsletter about running restaurants with AI. First in a series: working MCP connections for every major restaurant POS.
 
-> 🎥 **Not a developer?** There's a full step-by-step walkthrough — with screenshots for every Toast screen, the exact Railway clicks, and the phone demo — at **[chriscusack.net](https://chriscusack.net)**. This README is the condensed version for people comfortable with a terminal.
+> 🎥 **Not a developer?** There's a full step-by-step walkthrough — with screenshots for every Toast screen, the exact Railway clicks, and the phone demo — at **[chriscusack.net/p/toast-mcp](https://www.chriscusack.net/p/toast-mcp)**. This README is the condensed version for people comfortable with a terminal.
 
 ---
-
-## What you need
-
-1. **Toast standard API access.** This is the slow part. Toast doesn't self-serve API keys — you request "standard API access" through your Toast rep or a Customer Care ticket ("I want standard API access for my own restaurant group, for internal reporting"). Approval typically takes days to weeks. When approved, you get a **client ID** and **client secret** in Toast Web (search "API access" → Manage credentials). Save the secret immediately — Toast shows it once.
-2. **Your restaurant GUID.** Toast Web sets a cookie named `lastRestaurantGuid` when you're logged in, or check your API access welcome materials. (The walkthrough covers three ways to find it.)
-3. **A place to run the server** — Railway (easiest, ~$5/mo), or any host that runs Node 18+.
-4. **A Claude plan that supports custom connectors** (Pro/Max/Team) — or any other MCP client.
 
 ## Deploy on Railway (5 minutes, one click)
 
@@ -33,6 +26,13 @@ A **PrimeCost** project — built and maintained by **Chris Cusack**, restaurant
 If Claude is connected to your Chrome browser, you can also just ask it to do this setup for you.
 
 Prefer manual setup? Deploy this repo as a GitHub service and set the six variables yourself (`TOAST_MCP_MODE=http`, `TOAST_ENVIRONMENT=production`, plus the four above — invent your own long random `TOAST_MCP_SECRET`).
+
+## What you need
+
+1. **Toast standard API access.** On Restaurant Management Suite Essentials and up this is a self-serve page in Toast Web: **Integrations → Toast API access → Manage credentials → Create new credentials**, with the dropdown set to **Standard API**. Name it, select every read scope, pick your locations, Confirm. You get a **client ID** and **client secret**; save the secret immediately, Toast shows it once. If the page is missing, a Customer Care ticket asking for "standard API access for my own restaurant group, for internal reporting, all read scopes" gets it turned on (mine came through in a day). Full walkthrough: https://www.chriscusack.net/p/your-pos-has-two-apis
+2. **Your restaurant GUID.** Toast's API access confirmation email lists the GUID for every location you selected. Or: Toast Web sets a cookie named `lastRestaurantGuid` while you're logged in. (The walkthrough covers three ways to find it.)
+3. **A place to run the server** — Railway (easiest, ~$5/mo), or any host that runs Node 18+.
+4. **A Claude plan that supports custom connectors** (Pro/Max/Team) — or any other MCP client.
 
 ## Connect Claude
 
