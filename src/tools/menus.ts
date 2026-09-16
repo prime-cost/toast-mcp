@@ -6,6 +6,34 @@ import type { Menu, MenuGroup, MenuItem, ModifierGroup } from '../types/index.js
  * Menu Management Tools - comprehensive menu, item, and modifier operations
  */
 
+/**
+ * GET /menus/v2/menus returns a document, not a bare array: the menus live
+ * under `.menus` alongside lastUpdated, restaurantTimeZone and the modifier
+ * reference maps. Every tool that walks menus must unwrap it (issue #2).
+ */
+interface MenusDocument {
+  restaurantGuid?: string;
+  lastUpdated?: string;
+  restaurantTimeZone?: string;
+  menus: Menu[];
+}
+
+export async function fetchMenus(client: ToastClient, restaurantGuid: string): Promise<Menu[]> {
+  const res = await client.get<MenusDocument | Menu[]>(
+    `/menus/v2/menus`,
+    { restaurantGuid }
+  );
+  const menus = Array.isArray(res) ? res : res?.menus;
+  if (!Array.isArray(menus)) {
+    throw new Error('Unexpected /menus/v2/menus response: no menus array');
+  }
+  return menus;
+}
+
+function allItems(menus: Menu[]): MenuItem[] {
+  return menus.flatMap(menu => (menu.groups || []).flatMap(group => group.items || []));
+}
+
 export function registerMenusTools(client: ToastClient) {
   return [
     {
@@ -16,10 +44,7 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        const menus = await client.get<Menu[]>(
-          `/menus/v2/menus`,
-          { restaurantGuid: restGuid }
-        );
+        const menus = await fetchMenus(client, restGuid);
         return { menus, count: menus.length };
       },
     },
@@ -33,10 +58,12 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { menuGuid: string; restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        const menu = await client.get<Menu>(
-          `/menus/v2/menus/${args.menuGuid}`,
-          { restaurantGuid: restGuid }
-        );
+        // Menus v2 has no per-menu endpoint; pull the document and select.
+        const menus = await fetchMenus(client, restGuid);
+        const menu = menus.find(m => m.guid === args.menuGuid);
+        if (!menu) {
+          throw new Error(`Menu ${args.menuGuid} not found`);
+        }
         return { menu };
       },
     },
@@ -50,10 +77,12 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { itemGuid: string; restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        const item = await client.get<MenuItem>(
-          `/menus/v2/items/${args.itemGuid}`,
-          { restaurantGuid: restGuid }
-        );
+        // Menus v2 has no per-item endpoint; pull the document and select.
+        const menus = await fetchMenus(client, restGuid);
+        const item = allItems(menus).find(i => i.guid === args.itemGuid);
+        if (!item) {
+          throw new Error(`Menu item ${args.itemGuid} not found`);
+        }
         return { item };
       },
     },
@@ -67,21 +96,11 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { query: string; restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        const menus = await client.get<Menu[]>(
-          `/menus/v2/menus`,
-          { restaurantGuid: restGuid }
-        );
-
-        const allItems: MenuItem[] = [];
-        menus.forEach(menu => {
-          menu.groups.forEach(group => {
-            allItems.push(...group.items);
-          });
-        });
+        const menus = await fetchMenus(client, restGuid);
 
         const query = args.query.toLowerCase();
-        const matchingItems = allItems.filter(item =>
-          item.name.toLowerCase().includes(query) ||
+        const matchingItems = allItems(menus).filter(item =>
+          item.name?.toLowerCase().includes(query) ||
           item.sku?.toLowerCase().includes(query) ||
           item.plu?.toLowerCase().includes(query)
         );
@@ -154,21 +173,18 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { menuGuid?: string; restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        
+        const menus = await fetchMenus(client, restGuid);
+
         if (args.menuGuid) {
-          const menu = await client.get<Menu>(
-            `/menus/v2/menus/${args.menuGuid}`,
-            { restaurantGuid: restGuid }
-          );
-          return { groups: menu.groups, count: menu.groups.length };
+          const menu = menus.find(m => m.guid === args.menuGuid);
+          if (!menu) {
+            throw new Error(`Menu ${args.menuGuid} not found`);
+          }
+          const groups = menu.groups || [];
+          return { groups, count: groups.length };
         }
 
-        const menus = await client.get<Menu[]>(
-          `/menus/v2/menus`,
-          { restaurantGuid: restGuid }
-        );
-
-        const allGroups = menus.flatMap(menu => menu.groups);
+        const allGroups = menus.flatMap(menu => menu.groups || []);
         return { groups: allGroups, count: allGroups.length };
       },
     },
@@ -182,14 +198,11 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { groupGuid: string; restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        const menus = await client.get<Menu[]>(
-          `/menus/v2/menus`,
-          { restaurantGuid: restGuid }
-        );
+        const menus = await fetchMenus(client, restGuid);
 
         let foundGroup: MenuGroup | undefined;
         for (const menu of menus) {
-          foundGroup = menu.groups.find(g => g.guid === args.groupGuid);
+          foundGroup = (menu.groups || []).find(g => g.guid === args.groupGuid);
           if (foundGroup) break;
         }
 
@@ -209,19 +222,9 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        const menus = await client.get<Menu[]>(
-          `/menus/v2/menus`,
-          { restaurantGuid: restGuid }
-        );
+        const menus = await fetchMenus(client, restGuid);
 
-        const allItems: MenuItem[] = [];
-        menus.forEach(menu => {
-          menu.groups.forEach(group => {
-            allItems.push(...group.items);
-          });
-        });
-
-        const outOfStockItems = allItems.filter(item => item.outOfStock86 || item.inheritedOutOfStock86);
+        const outOfStockItems = allItems(menus).filter(item => item.outOfStock86 || item.inheritedOutOfStock86);
 
         return { items: outOfStockItems, count: outOfStockItems.length };
       },

@@ -47,6 +47,10 @@ export function registerReportingTools(client: ToastClient) {
           checkCount += order.checks.length;
 
           order.checks.forEach(check => {
+            // check.amount is Toast's net: already reduced by BOTH check-level
+            // and item-level discounts. Start there, then add every discount
+            // back into gross so gross - discounts = net (issue #1: check-level
+            // discounts used to be subtracted a second time).
             grossSales += check.amount || 0;
             taxAmount += check.taxAmount || 0;
             totalSales += check.totalAmount || 0;
@@ -58,19 +62,24 @@ export function registerReportingTools(client: ToastClient) {
               }
             });
 
-            check.appliedDiscounts?.forEach(discount => {
-              discountAmount += discount.discountAmount || 0;
-            });
-            // Item-level comps (loyalty rewards, single-item discounts) live on
-            // the selection. check.amount is already net of them, so count them
-            // into discounts AND back into gross, keeping gross - discounts = net.
+            // The same applied discount can surface on the check and again on
+            // the selections it was prorated across; count each guid once.
+            const seenDiscounts = new Set<string>();
+            const countDiscount = (d: any) => {
+              if (!d) return;
+              if (d.guid) {
+                if (seenDiscounts.has(d.guid)) return;
+                seenDiscounts.add(d.guid);
+              }
+              const amt = d.discountAmount || 0;
+              discountAmount += amt;
+              grossSales += amt;
+            };
+
+            check.appliedDiscounts?.forEach(countDiscount);
             check.selections?.forEach(selection => {
               if ((selection as any).voided) return;
-              (selection as any).appliedDiscounts?.forEach((d: any) => {
-                const amt = d?.discountAmount || 0;
-                discountAmount += amt;
-                grossSales += amt;
-              });
+              (selection as any).appliedDiscounts?.forEach(countDiscount);
             });
           });
         });
@@ -279,7 +288,15 @@ export function registerReportingTools(client: ToastClient) {
 
         const discounts: Record<string, { name: string; amount: number; count: number }> = {};
 
+        // Same applied discount can appear on the check and on the selections
+        // it was prorated across; count each guid once (matches sales summary).
+        const seenDiscounts = new Set<string>();
         const record = (discount: any) => {
+          if (!discount) return;
+          if (discount.guid) {
+            if (seenDiscounts.has(discount.guid)) return;
+            seenDiscounts.add(discount.guid);
+          }
           // Applied discounts reference the discount config as an object;
           // fall back to name so nothing lands under the literal "undefined".
           const key: string = discount?.discount?.guid || discount?.discountGuid || discount?.name || 'unknown';

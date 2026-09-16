@@ -68,7 +68,7 @@ export class ToastMCPServer {
     this.server = new Server(
       {
         name: 'toast-mcp by PrimeCost (Chris Cusack — chriscusack.net)',
-        version: '1.2.0',
+        version: '1.2.1',
       },
       {
         capabilities: {
