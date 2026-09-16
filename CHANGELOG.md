@@ -2,6 +2,28 @@
 
 Check your deployed version at `https://<your-domain>/health`.
 
+## 1.2.1 (2026-09-16)
+
+Both fixes come from production reports by @luizggonsales (issues #1 and #2).
+
+- **Sales summary no longer double-counts check-level discounts** (#1).
+  `check.amount` is already net of check-level discounts, but the summary
+  subtracted them again, so `netSales` came in low by exactly the check-level
+  discount total. Gross is now rebuilt by adding every discount back onto
+  `check.amount`, and an applied discount that appears on both the check and
+  its selections is counted once. The discount report dedupes the same way so
+  the two tools still agree.
+- **Menu tools work again** (#2). `GET /menus/v2/menus` returns a document with
+  the menus under `.menus`; the tools treated it as a bare array, so
+  `toast_list_menu_groups`, `toast_search_menu_items`, `toast_get_items_by_category`,
+  `toast_get_86d_items` and `toast_list_low_stock_items` threw
+  `menus.flatMap is not a function`, and `toast_list_menus` returned the
+  container with `count: undefined`. All of them now unwrap the document.
+  `toast_get_menu` and `toast_get_menu_item` called per-object endpoints that
+  Menus v2 does not have; they now select from the document instead.
+- **Unit tests added** (`npm test`): fake-client tests for the menu tools and
+  the discount arithmetic, alongside the live gauntlet.
+
 ## 1.2.0 (2026-09-01)
 
 Every fix below was found by testing against live production restaurants and is

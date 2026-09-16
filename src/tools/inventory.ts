@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ToastClient } from '../clients/toast.js';
 import type { StockItem } from '../types/index.js';
+import { fetchMenus } from './menus.js';
 
 /**
  * Inventory Management Tools
@@ -85,15 +86,12 @@ export function registerInventoryTools(client: ToastClient) {
         
         // Note: This would need to iterate through items or use a specific low-stock endpoint
         // For demonstration, showing the approach
-        const menus = await client.get(
-          `/menus/v2/menus`,
-          { restaurantGuid: restGuid }
-        );
+        const menus = await fetchMenus(client, restGuid);
 
         const allItemGuids: string[] = [];
-        (menus as any[]).forEach((menu: any) => {
-          menu.groups?.forEach((group: any) => {
-            group.items?.forEach((item: any) => {
+        menus.forEach(menu => {
+          menu.groups?.forEach(group => {
+            group.items?.forEach(item => {
               allItemGuids.push(item.guid);
             });
           });
