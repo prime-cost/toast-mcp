@@ -2,6 +2,25 @@
 
 Check your deployed version at `https://<your-domain>/health`.
 
+## 1.2.2 (2026-10-08)
+
+- **Menu tools now read the real Menus v2 shape.** 1.2.1 unwrapped the
+  `{ menus: [...] }` document but still walked `groups` and `items`. Toast
+  names them `menuGroups` (nested, up to three deep) and `menuItems`, so on live
+  data `toast_search_menu_items` returned 0 items, `toast_list_menu_groups`
+  and `toast_get_items_by_category` came back empty, and
+  `toast_get_86d_items` and `toast_list_low_stock_items` missed everything.
+  All menu walks now go through `allGroups()` / `allItems()`, which follow
+  nested groups and still accept the old `groups`/`items` spelling.
+- **`toast_search_menu_items` returns each item once.** The same item guid sits
+  on every menu that lists it, so results are deduped by guid with a
+  `foundIn` list of `{ menuGuid, menuName, menuGroupGuid, menuGroupName }`.
+- **`toast_list_low_stock_items`** checks each item guid once, including items
+  in nested groups.
+- **Types** use `menuGroups` / `menuItems` (legacy spellings kept optional).
+- **Tests:** `test/menus.test.mjs` now uses a fixture shaped after a live
+  document (nested groups, an item on two menus, an empty menu).
+
 ## 1.2.1 (2026-09-16)
 
 Both fixes come from production reports by @luizggonsales (issues #1 and #2).

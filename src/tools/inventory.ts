@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ToastClient } from '../clients/toast.js';
 import type { StockItem } from '../types/index.js';
-import { fetchMenus } from './menus.js';
+import { fetchMenus, allItems } from './menus.js';
 
 /**
  * Inventory Management Tools
@@ -88,14 +88,9 @@ export function registerInventoryTools(client: ToastClient) {
         // For demonstration, showing the approach
         const menus = await fetchMenus(client, restGuid);
 
-        const allItemGuids: string[] = [];
-        menus.forEach(menu => {
-          menu.groups?.forEach(group => {
-            group.items?.forEach(item => {
-              allItemGuids.push(item.guid);
-            });
-          });
-        });
+        // allItems walks menuGroups/menuItems, including nested sub-groups; an
+        // item listed on several menus is checked once.
+        const allItemGuids = [...new Set(allItems(menus).map(item => item.guid))];
 
         // Check stock for each item
         const lowStockItems: any[] = [];

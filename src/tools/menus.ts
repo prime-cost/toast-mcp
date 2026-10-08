@@ -8,8 +8,11 @@ import type { Menu, MenuGroup, MenuItem, ModifierGroup } from '../types/index.js
 
 /**
  * GET /menus/v2/menus returns a document, not a bare array: the menus live
- * under `.menus` alongside lastUpdated, restaurantTimeZone and the modifier
- * reference maps. Every tool that walks menus must unwrap it (issue #2).
+ * under `.menus` next to lastUpdated, restaurantTimeZone and the modifier
+ * reference maps. Inside it a menu holds `menuGroups`, and a group holds
+ * `menuItems` plus nested `menuGroups` (sub-groups can go several levels
+ * deep). Every tool that walks menus goes through these helpers so the shape
+ * is handled in one place.
  */
 interface MenusDocument {
   restaurantGuid?: string;
@@ -25,13 +28,38 @@ export async function fetchMenus(client: ToastClient, restaurantGuid: string): P
   );
   const menus = Array.isArray(res) ? res : res?.menus;
   if (!Array.isArray(menus)) {
-    throw new Error('Unexpected /menus/v2/menus response: no menus array');
+    const shape = res === null || res === undefined ? String(res) : typeof res;
+    throw new Error(`Unexpected /menus/v2/menus response: no menus array (got ${shape})`);
   }
   return menus;
 }
 
-function allItems(menus: Menu[]): MenuItem[] {
-  return menus.flatMap(menu => (menu.groups || []).flatMap(group => group.items || []));
+/** Direct child groups of a menu or group, whichever spelling the payload uses. */
+export function menuGroupsOf(node: { menuGroups?: MenuGroup[]; groups?: MenuGroup[] }): MenuGroup[] {
+  return node.menuGroups ?? node.groups ?? [];
+}
+
+/** Items directly in a group, whichever spelling the payload uses. */
+export function menuItemsOf(group: MenuGroup): MenuItem[] {
+  return group.menuItems ?? group.items ?? [];
+}
+
+/** Every group in a menu, depth first, including nested sub-groups. */
+export function allGroups(menu: Menu): MenuGroup[] {
+  const out: MenuGroup[] = [];
+  const walk = (groups: MenuGroup[]) => {
+    for (const group of groups) {
+      out.push(group);
+      walk(menuGroupsOf(group));
+    }
+  };
+  walk(menuGroupsOf(menu));
+  return out;
+}
+
+/** Every item across every menu and nested group. */
+export function allItems(menus: Menu[]): MenuItem[] {
+  return menus.flatMap(menu => allGroups(menu).flatMap(menuItemsOf));
 }
 
 export function registerMenusTools(client: ToastClient) {
@@ -58,7 +86,7 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { menuGuid: string; restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        // Menus v2 has no per-menu endpoint; pull the document and select.
+        // Menus v2 has no per-menu endpoint (404); pull the document and select.
         const menus = await fetchMenus(client, restGuid);
         const menu = menus.find(m => m.guid === args.menuGuid);
         if (!menu) {
@@ -77,7 +105,7 @@ export function registerMenusTools(client: ToastClient) {
       }),
       handler: async (args: { itemGuid: string; restaurantGuid?: string }) => {
         const restGuid = args.restaurantGuid || client.getRestaurantGuid();
-        // Menus v2 has no per-item endpoint; pull the document and select.
+        // Menus v2 has no per-item endpoint (404); pull the document and select.
         const menus = await fetchMenus(client, restGuid);
         const item = allItems(menus).find(i => i.guid === args.itemGuid);
         if (!item) {
@@ -99,12 +127,37 @@ export function registerMenusTools(client: ToastClient) {
         const menus = await fetchMenus(client, restGuid);
 
         const query = args.query.toLowerCase();
-        const matchingItems = allItems(menus).filter(item =>
+        const matches = (item: MenuItem) =>
           item.name?.toLowerCase().includes(query) ||
           item.sku?.toLowerCase().includes(query) ||
-          item.plu?.toLowerCase().includes(query)
-        );
+          item.plu?.toLowerCase().includes(query);
 
+        // The same item guid shows up under every menu that lists it (a
+        // dine-in and a to-go menu, say), so return each item once and record
+        // where it was found.
+        type Placement = { menuGuid: string; menuName: string; menuGroupGuid: string; menuGroupName: string };
+        const found = new Map<string, MenuItem & { foundIn: Placement[] }>();
+        for (const menu of menus) {
+          for (const group of allGroups(menu)) {
+            for (const item of menuItemsOf(group)) {
+              if (!matches(item)) continue;
+              const placement: Placement = {
+                menuGuid: menu.guid,
+                menuName: menu.name,
+                menuGroupGuid: group.guid,
+                menuGroupName: group.name,
+              };
+              const seen = found.get(item.guid);
+              if (seen) {
+                seen.foundIn.push(placement);
+              } else {
+                found.set(item.guid, { ...item, foundIn: [placement] });
+              }
+            }
+          }
+        }
+
+        const matchingItems = [...found.values()];
         return { items: matchingItems, count: matchingItems.length };
       },
     },
@@ -180,12 +233,12 @@ export function registerMenusTools(client: ToastClient) {
           if (!menu) {
             throw new Error(`Menu ${args.menuGuid} not found`);
           }
-          const groups = menu.groups || [];
+          const groups = allGroups(menu);
           return { groups, count: groups.length };
         }
 
-        const allGroups = menus.flatMap(menu => menu.groups || []);
-        return { groups: allGroups, count: allGroups.length };
+        const groups = menus.flatMap(allGroups);
+        return { groups, count: groups.length };
       },
     },
 
@@ -202,7 +255,7 @@ export function registerMenusTools(client: ToastClient) {
 
         let foundGroup: MenuGroup | undefined;
         for (const menu of menus) {
-          foundGroup = (menu.groups || []).find(g => g.guid === args.groupGuid);
+          foundGroup = allGroups(menu).find(g => g.guid === args.groupGuid);
           if (foundGroup) break;
         }
 
@@ -210,7 +263,8 @@ export function registerMenusTools(client: ToastClient) {
           throw new Error(`Menu group ${args.groupGuid} not found`);
         }
 
-        return { items: foundGroup.items, groupName: foundGroup.name, count: foundGroup.items.length };
+        const items = menuItemsOf(foundGroup);
+        return { items, groupName: foundGroup.name, count: items.length };
       },
     },
 
