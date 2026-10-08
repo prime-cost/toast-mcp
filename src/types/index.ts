@@ -263,20 +263,28 @@ export interface CurbsidePickupInfo {
 }
 
 // Menu Types
+// Menus v2 (GET /menus/v2/menus) nests groups under `menuGroups` and items
+// under `menuItems`; a group can hold further `menuGroups`. `groups`/`items`
+// are the older spelling this file started with and are kept as optional so
+// either shape reads the same through menuGroupsOf()/menuItemsOf() in
+// tools/menus.ts.
 export interface Menu {
   guid: string;
-  entityType: string;
+  entityType?: string;
   name: string;
-  visibility: string[];
-  groups: MenuGroup[];
+  visibility?: string[];
+  menuGroups?: MenuGroup[];
+  groups?: MenuGroup[];
   modifiedDate?: string;
 }
 
 export interface MenuGroup {
   guid: string;
-  entityType: string;
+  entityType?: string;
   name: string;
-  items: MenuItem[];
+  menuGroups?: MenuGroup[];
+  menuItems?: MenuItem[];
+  items?: MenuItem[];
   modifiedDate?: string;
 }
 
