@@ -2,6 +2,34 @@
 
 Check your deployed version at `https://<your-domain>/health`.
 
+## 1.2.3 (2026-10-19)
+
+`toast_get_sales_summary` now matches Toast Web's Sales summary on days with
+refunds, voided discounts, Waste comps or retried card payments (#4). Days
+without any of those already matched in 1.2.1 and are unchanged.
+
+- **Refunds come off `netSales`, net of tax and refunded tips.** Toast doesn't
+  reduce `check.amount` for a refund (`IGNORE_REFUND_IN_AMOUNT_DUE`), so the
+  subtraction is explicit. A partial refund takes a prorated share of the
+  check's tax.
+- **`refundAmount` is now net of tax and tips**, which is the "Sales refunds"
+  line on the screen. The charged-back figure is still there as
+  `refundGrossAmount`.
+- **Voided discounts and `Waste` comps stay out of both `grossSales` and
+  `discountAmount`.** Net sales doesn't move. Toast treats waste as not sold.
+- **`tipAmount` counts only live payments** (`CAPTURED`, `AUTHORIZED`,
+  `PROCESSED`). A denied card the guest retried used to count its tip twice.
+
+Connecting (#5):
+
+- **`TOAST_MCP_SECRET` is trimmed.** A trailing space or newline from pasting
+  it into Railway used to fail both the URL and the Bearer method.
+- **The secret is matched as a value, not built into the route.** Characters
+  like `:` `*` `(` `?` are route syntax to Express, so a secret containing them
+  404'd even when it was right.
+- **Rejected requests log why** (never the secret itself), so Railway's deploy
+  logs show whether the URL or the Bearer header was wrong.
+
 ## 1.2.2 (2026-10-08)
 
 - **Menu tools now read the real Menus v2 shape.** 1.2.1 unwrapped the
