@@ -75,7 +75,9 @@ async function main() {
       // Auth: requests must carry the shared secret, either as a URL path
       // prefix (/<secret>/mcp — for clients that cannot send custom headers)
       // or as an Authorization: Bearer header on /mcp.
-      const secret = process.env.TOAST_MCP_SECRET;
+      // Trim: a pasted variable often carries a trailing newline or space,
+      // which used to fail both auth methods with no hint why.
+      const secret = process.env.TOAST_MCP_SECRET?.trim();
       if (!secret || secret.length < 16) {
         console.error(
           'Error: TOAST_MCP_SECRET (min 16 chars) is required in http mode. ' +
@@ -123,12 +125,33 @@ async function main() {
         }
       };
 
-      const bearerOk = (req: any) =>
-        req.headers.authorization === `Bearer ${secret}`;
+      const { timingSafeEqual } = await import('node:crypto');
+      const secretMatches = (candidate: unknown) => {
+        if (typeof candidate !== 'string') return false;
+        const a = Buffer.from(candidate.trim());
+        const b = Buffer.from(secret);
+        return a.length === b.length && timingSafeEqual(a, b);
+      };
+      const bearerOk = (req: any) => {
+        const header = req.headers.authorization;
+        return typeof header === 'string' && header.startsWith('Bearer ')
+          && secretMatches(header.slice('Bearer '.length));
+      };
 
-      app.post(`/${secret}/mcp`, handleMcp);
+      // The secret is matched as a value, never spliced into the route
+      // pattern: characters like : * ( ) ? in a generated secret are route
+      // syntax to Express and made the path silently 404.
+      app.post('/:token/mcp', (req, res) => {
+        if (!secretMatches(req.params.token)) {
+          console.error('[Toast MCP] Rejected /<secret>/mcp: secret did not match TOAST_MCP_SECRET');
+          res.status(404).send('Not Found');
+          return;
+        }
+        void handleMcp(req, res);
+      });
       app.post('/mcp', (req, res) => {
         if (!bearerOk(req)) {
+          console.error('[Toast MCP] Rejected /mcp: missing or wrong Authorization: Bearer secret');
           res.status(401).json({
             jsonrpc: '2.0',
             error: { code: -32001, message: 'Unauthorized' },
@@ -141,12 +164,12 @@ async function main() {
       // Stateless transport: no server-initiated streams or sessions.
       const reject = (_req: any, res: any) =>
         res.status(405).set('Allow', 'POST').send('Method Not Allowed');
-      app.get(['/mcp', `/${secret}/mcp`], reject);
-      app.delete(['/mcp', `/${secret}/mcp`], reject);
+      app.get(['/mcp', '/:token/mcp'], reject);
+      app.delete(['/mcp', '/:token/mcp'], reject);
 
       // Health check (no secret required, reveals nothing sensitive)
       app.get('/health', (_req, res) => {
-        res.json({ status: 'ok', service: 'toast-mcp-server', version: '1.2.2' });
+        res.json({ status: 'ok', service: 'toast-mcp-server', version: '1.2.3' });
       });
 
       const port = config.port || 3000;

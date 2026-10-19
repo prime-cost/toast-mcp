@@ -6,6 +6,10 @@ import type { Order, MenuItemSales } from '../types/index.js';
  * Reporting & Analytics Tools
  */
 
+// Payment states Toast Web treats as live money. DENIED, VOIDED and CANCELLED
+// rows still carry a tipAmount and must not be counted.
+const LIVE_PAYMENT_STATUSES = new Set(['CAPTURED', 'AUTHORIZED', 'PROCESSED']);
+
 export function registerReportingTools(client: ToastClient) {
   return [
     {
@@ -34,6 +38,7 @@ export function registerReportingTools(client: ToastClient) {
         let discountAmount = 0;
         let voidAmount = 0;
         let refundAmount = 0;
+        let refundGrossAmount = 0;
         let guestCount = 0;
         let checkCount = 0;
 
@@ -56,10 +61,28 @@ export function registerReportingTools(client: ToastClient) {
             totalSales += check.totalAmount || 0;
 
             check.payments?.forEach(payment => {
-              tipAmount += payment.tipAmount || 0;
-              if (payment.refund) {
-                refundAmount += payment.refund.refundAmount || 0;
+              // A denied authorisation the guest then retried carries the same
+              // tip on both rows; Toast Web counts only the live payment. An
+              // absent status counts: losing a real tip is the worse error.
+              if (!payment.paymentStatus || LIVE_PAYMENT_STATUSES.has(payment.paymentStatus)) {
+                tipAmount += payment.tipAmount || 0;
               }
+
+              const refund = payment.refund;
+              if (!refund) return;
+
+              // Toast Web's "Sales refunds" line is net of tax and of refunded
+              // tips. Prorate the check's tax when only part of it came back;
+              // a refund can exceed the check total once a tip is in it, so
+              // never claw back more tax than the check carried.
+              const refunded = refund.refundAmount || 0;
+              const checkTotal = check.totalAmount || 0;
+              const refundedTax = checkTotal > 0
+                ? (check.taxAmount || 0) * Math.min(refunded / checkTotal, 1)
+                : 0;
+
+              refundGrossAmount += refunded;
+              refundAmount += refunded - (refund.tipRefundAmount || 0) - refundedTax;
             });
 
             // The same applied discount can surface on the check and again on
@@ -71,6 +94,12 @@ export function registerReportingTools(client: ToastClient) {
                 if (seenDiscounts.has(d.guid)) return;
                 seenDiscounts.add(d.guid);
               }
+              // Toast Web leaves two kinds of discount out of gross and out of
+              // discounts, symmetrically, so net is unaffected: one voided
+              // after it was applied, and a "Waste" comp — waste is not sold,
+              // so the item stays outside gross and the comp is not a discount.
+              if (d.processingState === 'VOID') return;
+              if (String(d.name || '').trim().toLowerCase() === 'waste') return;
               const amt = d.discountAmount || 0;
               discountAmount += amt;
               grossSales += amt;
@@ -84,7 +113,10 @@ export function registerReportingTools(client: ToastClient) {
           });
         });
 
-        netSales = grossSales - discountAmount;
+        // gross - discounts is the sum of live check amounts. Toast Web then
+        // takes refunds off net sales (they are not reduced out of
+        // check.amount: refundStrategy is IGNORE_REFUND_IN_AMOUNT_DUE).
+        netSales = grossSales - discountAmount - refundAmount;
 
         return {
           businessDate: args.businessDate,
@@ -96,6 +128,7 @@ export function registerReportingTools(client: ToastClient) {
           discountAmount,
           voidAmount,
           refundAmount,
+          refundGrossAmount,
           guestCount,
           checkCount,
           averageCheck: checkCount > 0 ? netSales / checkCount : 0,
