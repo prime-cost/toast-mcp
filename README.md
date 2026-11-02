@@ -79,5 +79,7 @@ This began as [BusyBee3333/toast-mcp-2026-complete](https://github.com/BusyBee33
 
 **Chris Cusack** — restaurant owner and operator (Houston, two locations) writing about restaurants + AI at **[chriscusack.net](https://chriscusack.net)**. If this saved you time, that's where the rest of the playbook lives: labor auditing with AI, review management, the full stack. If you want it set up for you, or want this for a POS that doesn't have one yet — reach out.
 
+**Using it?** Tag [@chriscusack_](https://www.instagram.com/chriscusack_/) on Instagram or post with **#ToastAllDay**. I want to see what you're asking it.
+
 ---
 *Not affiliated with or endorsed by Toast, Inc. Toast is a trademark of its owner. Use your own credentials; you are responsible for your own API terms compliance.*
